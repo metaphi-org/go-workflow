@@ -194,7 +194,7 @@ type Workflow[CT context.Context, C any, T any] struct {
 }
 
 /* for testing purposes: reset workflow and dependencies*/
-func (wf *Workflow[CT, C, T]) ResetWorkflow() {
+func (wf *Workflow[CT, C, T]) resetWorkflow() {
 	wf.executed = false
 	wf.dependencyManager.dependencyGraph = map[string]map[string]bool{}
 	wf.dependencyManager.dependencyChannels = map[string]dependencyChannel{}
