@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	"github.com/metaphi-org/go-workflow/go-workflow/limiter"
 )
 
 type Status string
@@ -36,6 +37,10 @@ func (d *DataTracker[C, T]) Update(cb func(*T)) {
 
 type ComponentInput interface{}
 
+type AddComponentConfig struct {
+	ConcurrencyLimiter *limiter.ConcurrencyLimiter
+}
+
 type componentFunctionInternal[CT context.Context, C any, T any] func(CT, ComponentInput, *DataTracker[C, T]) error
 
 type componentStatus struct {
@@ -44,12 +49,13 @@ type componentStatus struct {
 }
 
 type component[CT context.Context, C any, T any] struct {
-	id            string
-	Name          string
-	input         ComponentInput
-	addDependency func(d *component[CT, C, T])
-	executor      componentFunctionInternal[CT, C, T]
-	status        componentStatus
+	id              string
+	Name            string
+	input           ComponentInput
+	addDependency   func(d *component[CT, C, T])
+	executor        componentFunctionInternal[CT, C, T]
+	addComponentCfg *AddComponentConfig
+	status          componentStatus
 }
 
 type Component[CT context.Context, C any, T any] *component[CT, C, T]
@@ -236,20 +242,35 @@ func MakeComponent[CT context.Context, I any, C any, T any](
 	}
 }
 
-func (wf *Workflow[CT, C, T]) AddComponent(config componentConfig[CT, C, T]) *component[CT, C, T] {
-	if len(config.Name) == 0 {
+func (wf *Workflow[CT, C, T]) AddComponent(componentCfg componentConfig[CT, C, T], cfgs ...*AddComponentConfig) *component[CT, C, T] {
+	var cfg *AddComponentConfig
+	if len(cfgs) > 1 {
+		panic("only one AddComponentConfig is allowed")
+	}
+	if len(cfgs) == 1 {
+		cfg = cfgs[0]
+	}
+	if len(componentCfg.Name) == 0 {
 		panic("name cannot be empty")
 	}
-	if config.Executor == nil {
+	if componentCfg.Executor == nil {
 		panic("executor cannot be nil")
 	}
 	id := uuid.New().String()
 	var addDependencyWrapper = func(d *component[CT, C, T]) {
 		wf.dependencyManager.AddLink(id, d.id)
 	}
-	component := component[CT, C, T]{id: id, Name: config.Name, input: config.Input, executor: config.Executor, status: componentStatus{Status: PENDING}, addDependency: addDependencyWrapper}
+	component := component[CT, C, T]{
+		id:              id,
+		Name:            componentCfg.Name,
+		input:           componentCfg.Input,
+		executor:        componentCfg.Executor,
+		status:          componentStatus{Status: PENDING},
+		addDependency:   addDependencyWrapper,
+		addComponentCfg: cfg,
+	}
 	wf.componentsMap[id] = &component
-	wf.dependencyManager.componentIdToName[id] = config.Name
+	wf.dependencyManager.componentIdToName[id] = componentCfg.Name
 	return &component
 }
 
@@ -285,7 +306,13 @@ func (wf *Workflow[CT, C, T]) Execute(ctx CT, config C, data *T) (*T, Status, er
 
 			// execute the component if dependencies are resolved
 			if executionStatus == DONE {
+				if c.addComponentCfg != nil && c.addComponentCfg.ConcurrencyLimiter != nil {
+					c.addComponentCfg.ConcurrencyLimiter.Acquire()
+				}
 				err := c.executor(ctx, c.input, &dataTracker)
+				if c.addComponentCfg != nil && c.addComponentCfg.ConcurrencyLimiter != nil {
+					defer c.addComponentCfg.ConcurrencyLimiter.Release()
+				}
 				if err != nil {
 					log.Println("Workflow.Execute:Error:Component execution failed for component:", c.id, err)
 					executionStatus = ERROR
