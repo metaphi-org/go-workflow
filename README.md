@@ -108,6 +108,10 @@ Execute the workflow by calling wf.Execute and providing the required context, c
 data, status, err := wf.Execute(ctx, myConfig, myData)
 ```
 
+### Example
+
+Refer to [this](./go-workflow/examples_test.go) file for design of document processing workflow using `goworkflow`.
+
 ### License
 
 Go Workflow is released under the MIT License.
