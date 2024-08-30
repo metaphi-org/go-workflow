@@ -26,7 +26,7 @@ go get github.com/metaphi-org/go-workflow
 To use Go Workflow, simply import the library and create a new workflow instance:
 
 ```Go
-import "github.com/yourusername/goworkflow"
+import "github.com/metaphi-org/go-workflow/go-workflow"
 
 func main() {
 ctx := context.Background()
@@ -80,7 +80,7 @@ var concurrencyLimiter = limiter.NewConcurrencyLimiter(10)
 var cmp3 = wf.AddComponent(
 	goworkflow.MakeComponent(
 		"cmp3", // name of component
-		nil,    // custom input
+		nil,    // no input
 		func(ctx context.Context, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 			// logic here
 			return nil
