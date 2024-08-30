@@ -16,9 +16,27 @@ import (
 Examples for go-workflow package
 */
 
+/*
+Document Analysis Example
+
+- each document have N pages
+- Page Analysis:
+	each page will go through 2 components
+	- VisualInfomationExtraction
+	- TextExtractor
+	and then 3 parameters should be prepared using the results of these two
+	Parameter1 , Parameter2, Parameter3
+	We can execute maximum 50 pages concurrently
+- each page of document will be processed through PageAnalysis
+- FinalAggregation will be done after all pages are processed
+*/
+
+/* config struct for page analysis workflow*/
 type PageAnalysisConfig struct {
 	PdfPage []byte
 }
+
+// data store for page analysis workflow
 type PageAnalysisDataStore struct {
 	VisualInformation []string
 	ExtractedText     []string
@@ -116,25 +134,54 @@ func getPageAnalysis(ctx context.Context, page []byte) (*PageAnalysisDataStore, 
 	return dt, status, err
 }
 
+/* config struct for document analysis workflow*/
 type DocumentAnalysisConfig struct {
 	PdfDocument [][]byte
 }
 
+// data store for document analysis workflow
 type DocumentAnalysisDataStore struct {
 	PageAnalysisData []*PageAnalysisDataStore
+	AllPagesDone     bool
 }
 
+// input struct for page analysis component in document analysis workflow
 type DocumentAnalysisInput struct {
 	Index int
 }
 
 func getDocumentAnalysis(ctx context.Context, pages [][]byte, maxConcurrency int) (*DocumentAnalysisDataStore, goworkflow.Status, error) {
 	noOfPages := len(pages)
+
+	// global concurrency limiter for page analysis components
 	pageConcurrencyLimiter := limiter.NewConcurrencyLimiter(maxConcurrency)
 	documentAnalysisWorkflow := goworkflow.NewWorkflow[context.Context, DocumentAnalysisConfig, DocumentAnalysisDataStore](ctx)
 
+	// final aggregation component, will be executed after all page analysis components
+	finalAggregationComponent := documentAnalysisWorkflow.AddComponent(
+		goworkflow.MakeComponent(
+			"FinalAggregation",
+			nil,
+			func(ctx context.Context, input any, dt *goworkflow.DataTracker[DocumentAnalysisConfig, DocumentAnalysisDataStore]) error {
+				// final aggregation using all page analysis results
+				allPagesDone := true
+				for _, pageData := range dt.GetData().PageAnalysisData {
+					if pageData == nil {
+						allPagesDone = false
+						break
+					}
+				}
+
+				dt.Update(func(data *DocumentAnalysisDataStore) {
+					data.AllPagesDone = allPagesDone
+				})
+				return nil
+			},
+		),
+	)
+
 	for i := 0; i < noOfPages; i++ {
-		documentAnalysisWorkflow.AddComponent(
+		pageAnalysisCom := documentAnalysisWorkflow.AddComponent(
 			goworkflow.MakeComponent(
 				"PageAnalysis",
 				DocumentAnalysisInput{Index: i},
@@ -156,6 +203,9 @@ func getDocumentAnalysis(ctx context.Context, pages [][]byte, maxConcurrency int
 				ConcurrencyLimiter: pageConcurrencyLimiter,
 			},
 		)
+		// add dependencies
+		// final aggregation component depends on all page analysis components
+		finalAggregationComponent.AddDependencies(pageAnalysisCom)
 	}
 
 	config := DocumentAnalysisConfig{PdfDocument: pages}
@@ -192,6 +242,7 @@ func TestExampleDocumentAI(t *testing.T) {
 	maxTime := (len(allPages) / maxConcurrency) * 5
 	assert.True(t, math.Abs(float64(elapsedTime.Milliseconds()-int64(maxTime*1000))) < 100, "elapsed time should be around %d seconds", maxTime)
 	assert.NoError(t, err)
+	assert.True(t, dt2.AllPagesDone, "all pages should be done")
 	assert.Equal(t, goworkflow.DONE, status)
 	assert.Len(t, dt2.PageAnalysisData, 100)
 
