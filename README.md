@@ -109,7 +109,9 @@ data, status, err := wf.Execute(ctx, myConfig, myData)
 ```
 
 ### Example
-
+Below diagram shows a document processing workflow.
+![](./go-workflow/diagrams/document_processing.jpg)  
+The blue rectangles represent workflows, and the green rectangles represent components within a workflow, connected by directed edges that indicate dependencies. The diagram above shows a Page Analysis workflow with five components and a Document Analysis workflow that uses the Page Analysis workflow as a component for each page.
 Refer to [this](./go-workflow/examples_test.go) file for design of document processing workflow using `goworkflow`.
 
 ### License

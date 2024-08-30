@@ -199,7 +199,7 @@ func getDocumentAnalysis(ctx context.Context, pages [][]byte, maxConcurrency int
 					return nil
 				},
 			),
-			&goworkflow.AddComponentConfig{
+			&goworkflow.ComponentConfig{
 				ConcurrencyLimiter: pageConcurrencyLimiter,
 			},
 		)

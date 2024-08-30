@@ -37,7 +37,7 @@ func (d *DataTracker[C, T]) Update(cb func(*T)) {
 
 type ComponentInput interface{}
 
-type AddComponentConfig struct {
+type ComponentConfig struct {
 	ConcurrencyLimiter *limiter.ConcurrencyLimiter
 }
 
@@ -54,7 +54,7 @@ type component[CT context.Context, C any, T any] struct {
 	input           ComponentInput
 	addDependency   func(d *component[CT, C, T])
 	executor        componentFunctionInternal[CT, C, T]
-	addComponentCfg *AddComponentConfig
+	addComponentCfg *ComponentConfig
 	status          componentStatus
 }
 
@@ -218,7 +218,7 @@ func (wf *Workflow[CT, C, T]) resetWorkflow() {
 */
 type ComponentFunction[CT context.Context, I any, C any, T any] func(CT, I, *DataTracker[C, T]) error
 
-type componentConfig[CT context.Context, C any, T any] struct {
+type makeComponentConfig[CT context.Context, C any, T any] struct {
 	Name     string
 	Input    any
 	Executor componentFunctionInternal[CT, C, T]
@@ -228,8 +228,8 @@ func MakeComponent[CT context.Context, I any, C any, T any](
 	name string,
 	input I,
 	executor ComponentFunction[CT, I, C, T],
-) componentConfig[CT, C, T] {
-	return componentConfig[CT, C, T]{
+) makeComponentConfig[CT, C, T] {
+	return makeComponentConfig[CT, C, T]{
 		Name:  name,
 		Input: input,
 		Executor: func(c CT, ci ComponentInput, dt *DataTracker[C, T]) error {
@@ -242,8 +242,8 @@ func MakeComponent[CT context.Context, I any, C any, T any](
 	}
 }
 
-func (wf *Workflow[CT, C, T]) AddComponent(componentCfg componentConfig[CT, C, T], cfgs ...*AddComponentConfig) *component[CT, C, T] {
-	var cfg *AddComponentConfig
+func (wf *Workflow[CT, C, T]) AddComponent(componentCfg makeComponentConfig[CT, C, T], cfgs ...*ComponentConfig) *component[CT, C, T] {
+	var cfg *ComponentConfig
 	if len(cfgs) > 1 {
 		panic("only one AddComponentConfig is allowed")
 	}
