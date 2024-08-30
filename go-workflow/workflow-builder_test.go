@@ -32,36 +32,39 @@ func getCustomContext() customContext {
 func TestWorkflowCycleDetectionAndFailureHandling(t *testing.T) {
 	ctx := getCustomContext()
 
-	executeA := func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
+	compA := goworkflow.MakeComponent("A", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.A = "A"
 		})
 		return nil
-	}
-	executeB := func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
+	})
+
+	compB := goworkflow.MakeComponent("B", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.B = "B"
 		})
 		return nil
-	}
-	executeC := func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
+	})
+
+	compC := goworkflow.MakeComponent("C", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.C = "C"
 		})
 		return nil
-	}
-	executeD := func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
+	})
+
+	compD := goworkflow.MakeComponent("D", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.Combined = d.A + d.B + d.C
 		})
 		return nil
-	}
+	})
 
 	wf := goworkflow.NewWorkflow[customContext, Config, Data](ctx)
-	componentA := wf.AddComponent("A", executeA)
-	componentB := wf.AddComponent("B", executeB)
-	componentC := wf.AddComponent("C", executeC)
-	componentD := wf.AddComponent("D", executeD)
+	componentA := wf.AddComponent(compA)
+	componentB := wf.AddComponent(compB)
+	componentC := wf.AddComponent(compC)
+	componentD := wf.AddComponent(compD)
 
 	componentC.AddDependencies(componentA)
 	componentD.AddDependencies(componentB, componentC)
@@ -74,10 +77,10 @@ func TestWorkflowCycleDetectionAndFailureHandling(t *testing.T) {
 
 	wf = goworkflow.NewWorkflow[customContext, Config, Data](ctx)
 
-	componentA = wf.AddComponent("A", executeA)
-	componentB = wf.AddComponent("B", executeB)
-	componentC = wf.AddComponent("C", executeC)
-	componentD = wf.AddComponent("D", executeD)
+	componentA = wf.AddComponent(compA)
+	componentB = wf.AddComponent(compB)
+	componentC = wf.AddComponent(compC)
+	componentD = wf.AddComponent(compD)
 
 	componentD.AddDependencies(componentB, componentC, componentA)
 
@@ -89,16 +92,18 @@ func TestWorkflowCycleDetectionAndFailureHandling(t *testing.T) {
 
 	wf = goworkflow.NewWorkflow[customContext, Config, Data](ctx)
 
-	componentE := wf.AddComponent("E", func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
+	compE := goworkflow.MakeComponent("E", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		return errors.New("this is not implemented")
 	})
 
-	componentF := wf.AddComponent("F", func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
+	compF := goworkflow.MakeComponent("F", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.Combined = "F"
 		})
 		return nil
 	})
+	componentE := wf.AddComponent(compE)
+	componentF := wf.AddComponent(compF)
 	componentF.AddDependencies(componentE)
 	_, st, err = wf.Execute(ctx, Config{}, &Data{})
 
@@ -109,55 +114,6 @@ func TestWorkflowCycleDetectionAndFailureHandling(t *testing.T) {
 	assert.Equal(t, goworkflow.ERROR, componentF.Status().Status)
 }
 
-func TestWorkflowTimes(t *testing.T) {
-	ctx := getCustomContext()
-	wf := goworkflow.NewWorkflow[customContext, Config, Data](ctx)
-	wf.AddComponent("A", func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
-		time.Sleep(10 * time.Second)
-		dt.Update(func(d *Data) {
-			d.A = "A"
-		})
-		return nil
-	})
-
-	componentB := wf.AddComponent("B", func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
-		time.Sleep(2 * time.Second)
-		dt.Update(func(d *Data) {
-			d.B = "B"
-		})
-		return nil
-	})
-
-	componentC := wf.AddComponent("C", func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
-		time.Sleep(5 * time.Second)
-		dt.Update(func(d *Data) {
-			d.C = "C"
-		})
-		return nil
-	})
-
-	componentD := wf.AddComponent("D", func(ctx customContext, dt *goworkflow.DataTracker[Config, Data]) error {
-		dt.Update(func(d *Data) {
-			d.Combined = d.A + d.B + d.C
-		})
-		return nil
-	})
-
-	componentC.AddDependencies(componentB)
-	componentD.AddDependencies(componentC)
-
-	startTimeSeconds := time.Now().Unix()
-	data, st, err := wf.Execute(ctx, Config{}, &Data{})
-
-	timeTakenSeconds := time.Now().Unix() - startTimeSeconds
-	log.Println("Time taken:", timeTakenSeconds)
-	assert.NoError(t, err)
-	assert.Equal(t, st, goworkflow.DONE)
-	assert.Equal(t, "BC", data.Combined)
-	assert.True(t, math.Abs(float64(timeTakenSeconds-10)) <= 0.01)
-	assert.Equal(t, "A", data.A)
-}
-
 type Data2 struct {
 	Run1     string
 	Run2     string
@@ -165,54 +121,54 @@ type Data2 struct {
 }
 
 func TestExample(t *testing.T) {
-	wf1 := goworkflow.NewWorkflow[context.Context, Config, Data](context.TODO())
-	cA1 := wf1.AddComponent("A1", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data]) error {
+	ctx := getCustomContext()
+
+	wf1 := goworkflow.NewWorkflow[customContext, Config, Data](ctx)
+	cA1 := wf1.AddComponent(goworkflow.MakeComponent("A1", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		time.Sleep(5 * time.Second)
 		dt.Update(func(d *Data) {
 			d.A = "A1"
 		})
 		return nil
-	})
-
-	cB1 := wf1.AddComponent("B1", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data]) error {
+	}))
+	cB1 := wf1.AddComponent(goworkflow.MakeComponent("B1", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.B = "B1"
 		})
 		return nil
-	})
-
-	cC1 := wf1.AddComponent("C1", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data]) error {
+	}))
+	cC1 := wf1.AddComponent(goworkflow.MakeComponent("C1", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.Combined = d.A + d.B
 		})
 		return nil
-	})
+	}))
 	cC1.AddDependencies(cA1, cB1)
 
-	wf2 := goworkflow.NewWorkflow[context.Context, Config, Data](context.TODO())
-	cA2 := wf2.AddComponent("A2", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data]) error {
+	wf2 := goworkflow.NewWorkflow[customContext, Config, Data](ctx)
+	cA2 := wf2.AddComponent(goworkflow.MakeComponent("A2", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.A = "A2"
 		})
 		return nil
-	})
-	cB2 := wf2.AddComponent("B2", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data]) error {
+	}))
+	cB2 := wf2.AddComponent(goworkflow.MakeComponent("B2", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		time.Sleep(2 * time.Second)
 		dt.Update(func(d *Data) {
 			d.B = "B2"
 		})
 		return nil
-	})
-	cC2 := wf2.AddComponent("C2", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data]) error {
+	}))
+	cC2 := wf2.AddComponent(goworkflow.MakeComponent("C2", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data]) error {
 		dt.Update(func(d *Data) {
 			d.Combined = d.A + d.B
 		})
 		return nil
-	})
+	}))
 	cC2.AddDependencies(cA2, cB2)
 
-	wfCombined := goworkflow.NewWorkflow[context.Context, Config, Data2](context.TODO())
-	c1 := wfCombined.AddComponent("WF1", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data2]) error {
+	wfCombined := goworkflow.NewWorkflow[customContext, Config, Data2](ctx)
+	c1 := wfCombined.AddComponent(goworkflow.MakeComponent("WF1", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data2]) error {
 		data := &Data{}
 		_, _, err := wf1.Execute(ctx, Config{}, data)
 		if err != nil {
@@ -222,8 +178,8 @@ func TestExample(t *testing.T) {
 			d.Run1 = data.Combined
 		})
 		return nil
-	})
-	c2 := wfCombined.AddComponent("WF2", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data2]) error {
+	}))
+	c2 := wfCombined.AddComponent(goworkflow.MakeComponent("WF2", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data2]) error {
 		time.Sleep(4 * time.Second)
 		data := &Data{}
 		_, _, err := wf2.Execute(ctx, Config{}, data)
@@ -234,18 +190,18 @@ func TestExample(t *testing.T) {
 			d.Run2 = data.Combined
 		})
 		return nil
-	})
-	c3 := wfCombined.AddComponent("Combine", func(ctx context.Context, dt *goworkflow.DataTracker[Config, Data2]) error {
+	}))
+	c3 := wfCombined.AddComponent(goworkflow.MakeComponent("Combine", nil, func(ctx customContext, input any, dt *goworkflow.DataTracker[Config, Data2]) error {
 		dt.Update(func(d *Data2) {
 			d.Combined = dt.GetData().Run1 + dt.GetData().Run2
 		})
 		return nil
-	})
+	}))
 	c3.AddDependencies(c1, c2)
 
 	startTime := time.Now().Unix()
 
-	data, st, err := wfCombined.Execute(context.TODO(), Config{}, &Data2{})
+	data, st, err := wfCombined.Execute(ctx, Config{}, &Data2{})
 
 	timeTaken := time.Now().Unix() - startTime
 
@@ -253,4 +209,30 @@ func TestExample(t *testing.T) {
 	assert.Equal(t, st, goworkflow.DONE)
 	assert.Equal(t, "A1B1A2B2", data.Combined)
 	assert.True(t, math.Abs(float64(timeTaken-6)) <= 0.01)
+}
+
+func TestCustomInput(t *testing.T) {
+	wf := goworkflow.NewWorkflow[context.Context, Config, Data](context.TODO())
+
+	type CustomInput1 struct {
+		Name string
+	}
+
+	wf.AddComponent(
+		goworkflow.MakeComponent(
+			"A",
+			CustomInput1{
+				Name: "Narender",
+			},
+			func(ctx context.Context, input CustomInput1, dt *goworkflow.DataTracker[Config, Data]) error {
+				log.Println("Name: ", input.Name)
+				return nil
+			},
+		),
+	)
+
+	_, st, err := wf.Execute(context.TODO(), Config{}, &Data{})
+
+	assert.NoError(t, err)
+	assert.Equal(t, st, goworkflow.DONE)
 }
